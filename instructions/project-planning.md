@@ -15,7 +15,7 @@ Timeline, milestones, compute budget and risks. Task numbers refer to [implement
 | Week | Work | Tasks | Deliverable |
 |---|---|---|---|
 | 1 | Reproduce evaluation; prepare data; build agreement maps; check MEMO weights; cache all teachers; run teacher gate. | 1, 2, 3, 4 | Validated eval; loaders; agreement maps; teacher ODS table per dataset |
-| 2 | Reproduce PEdger baseline; joint augmentation; implement and unit-test Variants B and A. | 5, 6, 7, 8 | Baseline ODS; passing equivalence tests |
+| 2 | Checkpointing and resume (before the first long run); reproduce PEdger baseline; joint augmentation; implement and unit-test Variants B and A. | 4b, 5, 6, 7, 8 | Resume test passing; baseline ODS; passing equivalence tests |
 | 3 | BSDS500: single-teacher and ensemble runs, Variants A and B. | 9 | First BSDS500 results table |
 | 4 | Ablations; final 3-seed runs; NYUDv2 and MultiCue (3 splits). | 9, 10 | Main results tables for all datasets |
 | 5 | Agreement-bin analysis; efficiency and training cost; optional PEdger++ + ours; figures and writing. | 10, 11, 12 | Paper draft |
@@ -76,7 +76,7 @@ Timeline, milestones, compute budget and risks. Task numbers refer to [implement
 | PEdger retrain below .821 | M3 gate missed | Report our retrained number as the baseline; state it openly. |
 | PEdger + ours does not beat PEdger++ | M6 results | Lead with H1–H3, agreement bins and training-cost comparison; add PEdger++ + ours (H5). |
 | Python eval differs from MATLAB | M1 gate missed | Use MATLAB; validate any port on released checkpoints. |
-| Kaggle quota / session limits | Runs cut off | Per-epoch checkpoints; caches as Kaggle Datasets; 1 seed for ablations. |
+| Kaggle quota / session limits | Runs cut off | Full-state checkpoints every epoch + every ~20 min, clean stop before the limit, auto-resume in the next notebook version (D15); caches as Kaggle Datasets; 1 seed for ablations. |
 | Someone publishes the same idea | Literature check | Re-check Google Scholar and arXiv right before submission; sharpen the novelty claim. |
 
 ## Pre-submission checklist

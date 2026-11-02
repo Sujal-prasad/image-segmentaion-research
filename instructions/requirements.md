@@ -33,7 +33,7 @@ Improve PEdger's edge detection accuracy on BSDS500, NYUDv2 and MultiCue by dist
 |---|---|
 | NFR-1 | **Zero inference overhead**: student params, FLOPs and FPS identical to PEdger (0.73M params). |
 | NFR-2 | **Compute budget**: Kaggle T4, 16 GB VRAM, ~12 h per session, ~30 GPU-h per week. |
-| NFR-3 | **Resumability**: checkpoint every epoch; any run can resume after a Kaggle session ends. |
+| NFR-3 | **Resumability**: full training state checkpointed every epoch and every ~20 min; clean save-and-exit before the session limit; automatic resume in a new Kaggle session with no code or config change; a resumed run matches an uninterrupted one. Teacher caching and evaluation also resume. GPU-hours accumulate across sessions. |
 | NFR-4 | **Mixed precision** (`torch.cuda.amp`) for training. |
 | NFR-5 | **Reproducibility**: fixed seeds; config, code commit and seed logged for every run. |
 | NFR-6 | **Fair comparison**: plain-distillation baseline included; equal GPU time across compared methods; training GPU-hours reported (needed vs PEdger++). |

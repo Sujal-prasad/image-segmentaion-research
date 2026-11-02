@@ -27,6 +27,7 @@ pedger-mtkd/
 │   ├── dataset.py               # wraps PEdger dataset; loads T and a(p); SAME geometric augmentation for all
 │   ├── soft_target.py           # Variant A
 │   ├── kd_loss.py               # Variant B
+│   ├── checkpoint.py            # save/find/load full training state, time-budget stop, auto-resume
 │   └── train_kd.py              # PEdger training loop with minimal hooks for A/B
 ├── eval/
 │   ├── run_bsds_eval.py         # NMS + ODS/OIS/AP
@@ -82,6 +83,28 @@ def teacher_ensemble(maps, weighted=False):  # maps: list of (B,1,H,W) teacher p
 - `teacher_gate.py`: evaluate each teacher and the ensemble on each dataset's validation split with Task 1's evaluator; write a table; output the list of teachers kept per dataset.
 - **Done when:** teacher ODS table per dataset exists; teachers not better than PEdger on a dataset are dropped for it.
 
+### Task 4b — Checkpointing and resume (`pedger_kd/checkpoint.py`)
+
+Built before the first real training run (Task 5). Design: [architecture.md §7](architecture.md#7-checkpointing-and-resume).
+
+```python
+class Checkpointer:
+    def __init__(self, out_dir, search_dirs, cfg, every_min=20, budget_h=11.25, keep_last=2): ...
+    def find_latest(self) -> Path | None          # out_dir first, then attached Kaggle inputs
+    def load(self, path, nets, momentum_nets, optimizer, scheduler, scaler) -> TrainState
+    def save(self, state, nets, momentum_nets, optimizer, scheduler, scaler, tag="last")  # atomic
+    def should_save(self, state) -> bool          # every_min elapsed, at an accumulation boundary
+    def out_of_time(self) -> bool                 # remaining session budget too small
+```
+
+- `TrainState`: `epoch`, `step_in_epoch`, `global_step`, `gpu_seconds`, `best_ods`, `history`, RNG states, config hash, git commit.
+- Atomic write (`.tmp` + `os.replace`); keep `last.pt`, last 2 epoch files, `best.pt`; write `run_state.json`.
+- Data order: per-epoch permutation from `(seed, epoch)`; on resume skip `step_in_epoch` batches.
+- Save only at gradient-accumulation boundaries; record whether the end-of-epoch momentum update has run.
+- Handle `SIGTERM` / `KeyboardInterrupt` by saving `last.pt`.
+- Teacher caching and evaluation: skip outputs that already exist and load correctly; write atomically.
+- **Done when:** (1) a CPU test with a tiny model shows *train 2N steps* ≡ *train N, save, reload into fresh objects, train N* (identical weights, optimizer state and LR); (2) a config-hash mismatch refuses to resume; (3) on Kaggle, a run stopped mid-epoch resumes in a new notebook version from the previous version's output.
+
 ### Task 5 — PEdger baseline reproduction
 
 - Run official PEdger training through our pipeline on BSDS + VOC (30 epochs, AdamW, 4-epoch warm-up to LR 0.001, linear decay, batch 16 via gradient accumulation).
@@ -133,7 +156,7 @@ def soft_target(Y, M, T, alpha, gamma=0.5, ramp=1.0):
 ### Task 9 — Training runs (`pedger_kd/train_kd.py`, `configs/`)
 
 - Runs: baseline; B-uniform; B-agree; A-agree with each single teacher and the ensemble; γ sweep; 3 seeds for main results.
-- AMP; checkpoint every epoch; resume from latest checkpoint; log config, seed, git commit and GPU-hours.
+- AMP; checkpoints and auto-resume via `checkpoint.py` (Task 4b); log config, seed, git commit and GPU-hours accumulated across sessions.
 - **Done when:** all runs logged with GPU-hours.
 
 ### Task 10 — Evaluation and analysis (`eval/`)
@@ -192,7 +215,17 @@ lr: 0.001
 warmup_epochs: 4
 batch_size: 16           # via gradient accumulation
 amp: true
+
+# checkpointing / resume
+out_dir: /kaggle/working/runs/${name}/seed${seed}
+resume_search: [/kaggle/input]   # previous notebook versions' outputs
+ckpt_every_min: 20       # mid-epoch checkpoint interval
+session_budget_h: 11.25  # save and exit cleanly before Kaggle's ~12 h limit
+keep_last: 2
+ckpt_mirror: null        # optional: kaggle_dataset | hf_hub
 ```
+
+`config_hash` is computed over everything except the checkpointing / path keys, so moving a run between sessions or machines does not block resume.
 
 ## Kaggle notebooks
 
@@ -208,12 +241,15 @@ amp: true
 
 Datasets and teacher caches are attached as Kaggle Datasets; checkpoints and logs are written to notebook output.
 
+**Continuing after a session or quota cut-off:** run training notebooks with *Save & Run All*. To continue, make a new version that attaches the previous version's output as an input and run it again; `train_kd.py` finds `last.pt` and resumes. Teacher-caching and evaluation notebooks resume the same way (they skip finished images).
+
 ## Status
 
 - [ ] 1 Evaluation reproduced
 - [ ] 2 Data preparation
 - [ ] 3 Agreement maps
 - [ ] 4 Teacher caching + gate
+- [ ] 4b Checkpointing and resume
 - [ ] 5 PEdger baseline
 - [ ] 6 Joint augmentation
 - [ ] 7 Variant B

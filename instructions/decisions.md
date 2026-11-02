@@ -93,6 +93,14 @@ A log of the project's key design decisions, why they were made, and what they c
 - **Decision:** Report SS / MS and ± VOC separately; MultiCue as mean ± std over 3 splits; training GPU-hours for every compared method; plain-distillation baseline with equal GPU time.
 - **Why:** Fair-comparison rule from the canonical KD study [34]; needed for the PEdger++ comparison.
 
+### D15. Full-state checkpoints with automatic resume
+
+- **Status:** Accepted
+- **Context:** Kaggle sessions end at ~12 h and the weekly GPU quota can run out mid-run; losing a run wastes a large share of the ~30 GPU-h/week.
+- **Decision:** One shared `pedger_kd/checkpoint.py`. It saves full training state (both networks, momentum copies, optimizer, scheduler, AMP scaler, RNG states, epoch/step, GPU-seconds) every epoch and every ~20 min, writes atomically, stops cleanly before the session limit, and resumes automatically from the previous notebook version's output. Teacher caching and evaluation skip finished items.
+- **Alternatives:** Epoch-only checkpoints (can lose up to one epoch of a long run); manual resume (error-prone).
+- **Consequences:** Needs a resume-equivalence test; checkpoints only at gradient-accumulation boundaries; disk use capped by keeping only the last 2 epochs + best.
+
 ---
 
 ## Open questions

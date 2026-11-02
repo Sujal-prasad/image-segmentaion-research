@@ -37,7 +37,8 @@ Key properties:
 | KD dataset | `pedger_kd/dataset.py` | Wraps PEdger's dataset; loads `T` and `a`; applies one shared geometric transform. |
 | Variant A | `pedger_kd/soft_target.py` | Agreement-aware soft target (main method). |
 | Variant B | `pedger_kd/kd_loss.py` | Weighted KD loss with logit standardization (simpler baseline). |
-| Training loop | `pedger_kd/train_kd.py` | PEdger's loop with minimal hooks for A / B; AMP; per-epoch checkpoints; GPU-hour logging. |
+| Training loop | `pedger_kd/train_kd.py` | PEdger's loop with minimal hooks for A / B; AMP; GPU-hour logging. |
+| Checkpointing | `pedger_kd/checkpoint.py` | Save / find / load full training state; time-budget stop; auto-resume (§7). |
 | Evaluation | `eval/run_bsds_eval.py` | NMS + ODS / OIS / AP (MATLAB reference or validated Python port). |
 | Agreement bins | `eval/agreement_bins.py` | Precision / recall per low / medium / high agreement bin (H2). |
 | Benchmark | `bench/speed_flops.py` | Params, FLOPs (`fvcore` / `thop`), FPS (T4 + CPU), GPU-hours from logs. |
@@ -126,9 +127,59 @@ On Kaggle, raw datasets and teacher caches are stored as **Kaggle Datasets** and
 
 PEdger++ uses the same soft-target form (`Ỹ = η·M + (1−η)·Y`), so Variant A's `soft_target` plugs in at the same hook. Use PEdger++'s "efficient" training to save GPU time. This is optional (hypothesis H5).
 
-## 7. Invariants
+## 7. Checkpointing and resume
+
+Kaggle sessions end at ~12 h, and the weekly GPU quota can run out mid-run. Every long job (training, teacher caching, evaluation) must be able to stop at any time and continue in a later session without losing more than a few minutes of work or changing the result.
+
+### What a training checkpoint holds (`pedger_kd/checkpoint.py`)
+
+| Item | Why |
+|---|---|
+| Both PEdger networks (recurrent + non-recurrent) | The model |
+| Their momentum copies `W_m` | Needed for `M`; updated at epoch end, so losing them changes the run |
+| Optimizer (AdamW), LR scheduler, AMP `GradScaler` | Exact continuation of the warm-up / decay schedule and loss scaling |
+| `epoch`, `step_in_epoch`, `global_step` | Where to continue; mid-epoch resume |
+| RNG states: Python, NumPy, PyTorch CPU, CUDA | Same augmentation and data order after resume |
+| Config + config hash, git commit | Refuse to resume with a different config |
+| Accumulated GPU-seconds, wall-clock per session | GPU-hours reported in the paper span all sessions |
+| Metric history, best ODS so far | Logs and "best" checkpoint survive restarts |
+
+### When checkpoints are written
+
+- **End of every epoch** (`epoch_XXX.pt`), plus `last.pt`.
+- **Every N minutes inside an epoch** (default 20 min, config `ckpt_every_min`), only at a gradient-accumulation boundary, so a quota cut-off loses at most N minutes.
+- **On a time budget:** the loop tracks session time; when the remaining budget (config `session_budget_h`, default 11.25 h) is less than ~1.2 × the time of one checkpoint interval, it saves and exits cleanly so Kaggle keeps the output.
+- **On `SIGTERM` / `KeyboardInterrupt`:** save `last.pt` before exiting (best effort).
+
+### How they are written
+
+- Atomic: write to `last.pt.tmp`, then `os.replace` → a crash mid-write never corrupts the last good checkpoint.
+- Keep `last.pt`, the last 2 epoch checkpoints and `best.pt`; delete older ones (Kaggle output is limited to ~20 GB).
+- A small `run_state.json` next to them (epoch, step, GPU-hours, status: `running` / `paused` / `done`) for quick inspection.
+
+### How resume works
+
+1. On start, `train_kd.py` looks for `last.pt` in the output dir, then in any attached input dirs (the previous Kaggle version's output).
+2. If found: check config hash → load everything above → copy checkpoints into the current output dir → continue from `(epoch, step_in_epoch)`.
+3. Data order is a deterministic permutation from `(seed, epoch)`; resuming mid-epoch skips the first `step_in_epoch` batches of that permutation.
+4. The end-of-epoch momentum update is recorded in the checkpoint so it is never applied twice.
+5. If `run_state.json` says `done`, exit immediately.
+
+### Kaggle workflow
+
+- Run training with **Save Version → Save & Run All** (commit mode), so `/kaggle/working` is saved even after the session ends.
+- To continue: create a new version that attaches the previous version's output as input; the script resumes automatically. No code or config changes.
+- Optional: also push `last.pt` to an external store (Kaggle Dataset via API, or Hugging Face Hub) after each epoch, configured by `ckpt_mirror`.
+
+### Other long jobs
+
+- **Teacher caching:** skip any image whose 16-bit PNG already exists and is readable; write each PNG atomically. Re-running the notebook continues where it stopped.
+- **Evaluation:** cache per-image predictions and per-image matching results; re-runs skip finished images.
+
+## 8. Invariants
 
 - No teacher model, `T`, or `a(p)` is used at inference.
 - Params / FLOPs / FPS of the trained student equal PEdger's.
 - `T` and `a(p)` are always spatially aligned with the image after augmentation.
 - With KD disabled (`lambda_kd = 0` / Variant A reduced to PEdger), training matches the baseline.
+- A run that is stopped and resumed produces the same weights as an uninterrupted run (up to GPU non-determinism).

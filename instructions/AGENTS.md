@@ -19,7 +19,7 @@ Source of truth: [Edge_Detection_Research_Plan.md](../Edge_Detection_Research_Pl
 5. **No test data in teacher work.** Teacher caching uses training images; the teacher gate uses validation splits only.
 6. **Evaluation must be validated.** Use the MATLAB BSDS / edges-toolbox benchmark, or a Python port only after it reproduces a published number within ±0.002. `maxDist` = 0.0075 (BSDS500, MultiCue), 0.011 (NYUDv2).
 7. **Never mix settings in one column:** single-scale vs multi-scale, with vs without PASCAL VOC.
-8. **Kaggle-safe training:** mixed precision (`torch.cuda.amp`), checkpoint every epoch, resumable from the last checkpoint, log GPU-hours per run.
+8. **Kaggle-safe training:** mixed precision (`torch.cuda.amp`); every long job must survive a session or quota cut-off. Use `pedger_kd/checkpoint.py` (full state, every epoch + every ~20 min, atomic writes, time-budget stop, auto-resume). Never write a training loop that cannot resume. Log GPU-hours accumulated across sessions. Design: [architecture.md §7](architecture.md#7-checkpointing-and-resume).
 9. **Seeds:** 3 seeds for main results, 1 seed for ablations/sweeps. Seeds go in the config.
 
 ## Required equivalence tests

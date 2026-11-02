@@ -56,7 +56,11 @@ Mark each item ✅ (checked), ❌ (problem) or N/A in the review.
 - [ ] All hyperparameters come from the YAML config; no magic numbers in code.
 - [ ] Seed set for Python, NumPy and PyTorch; seed stored in the run log.
 - [ ] Run log records config, git commit, seed and GPU-hours.
-- [ ] Checkpoint saved every epoch; resuming from a checkpoint restores model, momentum copies, optimizer, scheduler, AMP scaler and epoch.
+- [ ] Checkpoint saved every epoch and every `ckpt_every_min`, only at gradient-accumulation boundaries, written atomically.
+- [ ] Resuming restores both networks, momentum copies, optimizer, scheduler, AMP scaler, RNG states, epoch and step-in-epoch; the end-of-epoch momentum update is never applied twice.
+- [ ] Resume-equivalence test passes (train 2N ≡ train N + resume + train N).
+- [ ] Time-budget stop saves and exits cleanly before the Kaggle session limit.
+- [ ] Teacher caching and evaluation skip already-finished items and write outputs atomically.
 - [ ] Paths to datasets and caches are configurable (Kaggle input vs local).
 
 ## 8. Tests
